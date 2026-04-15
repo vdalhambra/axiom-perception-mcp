@@ -17,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from fastmcp import FastMCP
 from perception.tools.memory import register_memory_tools
 from perception.tools.community import register_community_tools
+from perception.tools.macos_ax import register_macos_ax_tools
 
 mcp = FastMCP(
     name="Axiom Perception",
@@ -29,14 +30,16 @@ mcp = FastMCP(
         "to improve the shared knowledge. "
         "On first use: call fetch_community_patterns() to load battle-tested "
         "workflows for Twitter, GitHub, LinkedIn, and more — no cold start. "
-        "Works alongside Playwright MCP, Computer Use, or any automation tool: "
-        "this MCP handles the 'what to do', your automation tool handles the 'how'."
+        "On macOS: use check_accessibility_permissions() then get_app_ui_tree() "
+        "to control any native app directly via the Accessibility API — "
+        "no browser required for Finder, TextEdit, Xcode, Slack, etc."
     ),
-    version="1.0.1",
+    version="1.1.0",
 )
 
 register_memory_tools(mcp)
 register_community_tools(mcp)
+register_macos_ax_tools(mcp)
 
 
 def main() -> None:
