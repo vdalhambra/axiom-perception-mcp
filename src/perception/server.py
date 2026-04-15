@@ -32,7 +32,7 @@ mcp = FastMCP(
         "Works alongside Playwright MCP, Computer Use, or any automation tool: "
         "this MCP handles the 'what to do', your automation tool handles the 'how'."
     ),
-    version="1.0.0",
+    version="1.0.1",
 )
 
 register_memory_tools(mcp)

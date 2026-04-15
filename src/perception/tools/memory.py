@@ -32,18 +32,25 @@ def register_memory_tools(mcp: FastMCP) -> None:
         suggestion to complete manually and then save_pattern() for next time.
         """
         init_db()
-        query = f"%{task.lower()}%"
-        params: list = [query, query]
+        # Filter stop words that cause noisy matches ("to", "on", "an", etc.)
+        _stop = {"to", "an", "the", "of", "in", "on", "at", "for", "is", "it",
+                 "as", "be", "by", "do", "go", "my", "up", "or", "a"}
+        words = [w for w in task.lower().split() if len(w) >= 3 and w not in _stop]
+        if not words:
+            words = [task.lower()]
 
-        sql = """
-            SELECT * FROM patterns
-            WHERE (LOWER(task) LIKE ? OR LOWER(notes) LIKE ?)
-        """
+        # Fetch candidates: any word must appear in the task field
+        word_conditions = []
+        params: list = []
+        for w in words:
+            like = f"%{w}%"
+            word_conditions.append("LOWER(task) LIKE ?")
+            params.append(like)
+
+        sql = f"SELECT * FROM patterns WHERE ({' OR '.join(word_conditions)})"
         if app:
             sql += " AND LOWER(app) = ?"
             params.append(app.lower())
-
-        sql += " ORDER BY success_rate DESC, execution_count DESC LIMIT 5"
 
         conn = get_conn()
         try:
@@ -61,7 +68,30 @@ def register_memory_tools(mcp: FastMCP) -> None:
                 ),
             }
 
-        best = rows[0]
+        # Score by how many query words appear in the task name
+        def relevance(row: dict) -> float:
+            task_lower = row["task"].lower()
+            hits = sum(1 for w in words if w in task_lower)
+            return hits / len(words)
+
+        ranked = sorted(rows, key=lambda r: (relevance(r), r["success_rate"], r["execution_count"]), reverse=True)
+
+        # Short queries (1-2 words): all words must appear (no generic false positives)
+        # Longer queries (3+): at least half the words must match
+        MIN_RELEVANCE = 1.0 if len(words) <= 2 else 0.5
+        top_relevance = relevance(ranked[0])
+        if top_relevance < MIN_RELEVANCE:
+            return {
+                "status": "not_found",
+                "message": f"No sufficiently relevant pattern found for '{task}'",
+                "best_partial_match": ranked[0]["task"],
+                "next_step": (
+                    "Complete the task manually. Once done, call save_pattern() "
+                    "with the steps that worked so future executions skip this discovery."
+                ),
+            }
+
+        best = ranked[0]
         result = {
             "status": "found",
             "pattern_id": best["id"],
@@ -76,8 +106,8 @@ def register_memory_tools(mcp: FastMCP) -> None:
             "version": best["version"],
             "notes": best["notes"],
         }
-        if len(rows) > 1:
-            result["alternatives_available"] = len(rows) - 1
+        if len(ranked) > 1:
+            result["alternatives_available"] = len(ranked) - 1
             result["tip"] = "Call list_patterns() or search_patterns() to see alternative approaches."
         return result
 
@@ -315,17 +345,23 @@ def register_memory_tools(mcp: FastMCP) -> None:
         a related pattern that can be adapted for your use case.
         """
         init_db()
-        q = f"%{query.lower()}%"
+        words = [w for w in query.lower().split() if len(w) >= 2] or [query.lower()]
+        word_conditions = []
+        params: list = []
+        for w in words:
+            like = f"%{w}%"
+            word_conditions.append(
+                "(LOWER(task) LIKE ? OR LOWER(app) LIKE ? OR LOWER(category) LIKE ? OR LOWER(notes) LIKE ?)"
+            )
+            params.extend([like, like, like, like])
+
+        sql = f"""SELECT * FROM patterns
+                  WHERE {' OR '.join(word_conditions)}
+                  ORDER BY success_rate DESC, execution_count DESC
+                  LIMIT 10"""
         conn = get_conn()
         try:
-            rows = conn.execute(
-                """SELECT * FROM patterns
-                   WHERE LOWER(task) LIKE ? OR LOWER(app) LIKE ?
-                      OR LOWER(category) LIKE ? OR LOWER(notes) LIKE ?
-                   ORDER BY success_rate DESC, execution_count DESC
-                   LIMIT 10""",
-                (q, q, q, q),
-            ).fetchall()
+            rows = conn.execute(sql, params).fetchall()
         finally:
             conn.close()
 
