@@ -1,5 +1,6 @@
 """SQLite persistence layer for axiom-perception-mcp."""
 
+import os
 import sqlite3
 from pathlib import Path
 
@@ -9,9 +10,14 @@ DB_PATH = DB_DIR / "patterns.db"
 
 def get_conn() -> sqlite3.Connection:
     DB_DIR.mkdir(parents=True, exist_ok=True)
+    # Restrict directory: only owner can read/write/execute
+    os.chmod(DB_DIR, 0o700)
     conn = sqlite3.connect(str(DB_PATH))
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
+    # Restrict DB file: only owner can read/write
+    if DB_PATH.exists():
+        os.chmod(DB_PATH, 0o600)
     return conn
 
 

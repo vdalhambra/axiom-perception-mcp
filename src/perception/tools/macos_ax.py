@@ -2,6 +2,10 @@
 
 Requires Accessibility permission: System Settings → Privacy & Security → Accessibility.
 macOS only. Falls back gracefully on other platforms.
+
+SECURITY: AX tools will refuse to operate on apps in the SENSITIVE_APPS blocklist.
+This prevents accidental or malicious automation of password managers, banking apps,
+and system security dialogs. Extend the list as needed.
 """
 
 import json
@@ -9,6 +13,51 @@ from typing import Annotated, Optional
 
 from fastmcp import FastMCP
 from pydantic import Field
+
+# --- Sensitive app blocklist ---
+# AX operations on these apps are blocked to prevent credential theft.
+# Bundle ID prefixes (case-insensitive) take priority over name matching.
+
+_BLOCKED_BUNDLE_PREFIXES = {
+    "com.agilebits",           # 1Password family
+    "com.bitwarden",           # Bitwarden
+    "com.lastpass",            # LastPass
+    "com.dashlane",            # Dashlane
+    "com.apple.keychainaccess",
+    "com.apple.passwords",
+    "com.apple.securityagent",
+    "com.apple.security",
+    "com.apple.systempreferences",  # System Preferences / System Settings
+}
+
+_BLOCKED_NAME_KEYWORDS = {
+    "1password", "keychain access", "passwords", "bitwarden",
+    "lastpass", "dashlane", "authy", "google authenticator",
+    "security agent", "system preferences", "system settings",
+}
+
+
+def _is_blocked_app(name: str, bundle_id: str = "") -> bool:
+    name_lower = name.lower()
+    bundle_lower = bundle_id.lower()
+    if any(name_lower == kw or kw in name_lower for kw in _BLOCKED_NAME_KEYWORDS):
+        return True
+    if any(bundle_lower.startswith(prefix) for prefix in _BLOCKED_BUNDLE_PREFIXES):
+        return True
+    return False
+
+
+def _blocked_app_error(app_name: str) -> dict:
+    return {
+        "status": "error",
+        "reason": "blocked_app",
+        "app": app_name,
+        "message": (
+            f"'{app_name}' is in the blocked apps list. "
+            "AX automation is disabled for password managers, credential stores, "
+            "and system security apps to prevent accidental exposure of sensitive data."
+        ),
+    }
 
 
 # --- Helpers ---
@@ -63,6 +112,15 @@ def _find_app_pid(app_name: str) -> Optional[int]:
     for app in _get_running_apps():
         if name_lower in app["name"].lower():
             return app["pid"]
+    return None
+
+
+def _find_app_info(app_name: str) -> Optional[dict]:
+    """Return {pid, name, bundle_id} for the first matching running app, or None."""
+    name_lower = app_name.lower()
+    for app in _get_running_apps():
+        if name_lower in app["name"].lower():
+            return app
     return None
 
 
@@ -255,8 +313,8 @@ def register_macos_ax_tools(mcp: FastMCP) -> None:
         if not _ax_available():
             return _not_trusted_error()
 
-        pid = _find_app_pid(app_name)
-        if not pid:
+        app_info = _find_app_info(app_name)
+        if not app_info:
             running = [a["name"] for a in _get_running_apps() if a["foreground"]]
             return {
                 "status": "error",
@@ -264,7 +322,10 @@ def register_macos_ax_tools(mcp: FastMCP) -> None:
                 "running_apps": running,
             }
 
-        root = AXUIElementCreateApplication(pid)
+        if _is_blocked_app(app_info["name"], app_info.get("bundle_id", "")):
+            return _blocked_app_error(app_info["name"])
+
+        root = AXUIElementCreateApplication(app_info["pid"])
         elements = _walk_tree(root, depth=0, max_depth=max_depth)
 
         # Group by role for readability
@@ -275,7 +336,7 @@ def register_macos_ax_tools(mcp: FastMCP) -> None:
 
         return {
             "app": app_name,
-            "pid": pid,
+            "pid": app_info["pid"],
             "total_elements": len(elements),
             "elements_by_role": by_role,
             "tip": "Use _id or _path values with click_element() or type_in_element().",
@@ -284,7 +345,7 @@ def register_macos_ax_tools(mcp: FastMCP) -> None:
     @mcp.tool
     def find_element(
         app_name: Annotated[str, Field(description="App name, e.g. 'Safari', 'TextEdit'")],
-        query: Annotated[str, Field(description="What to find, e.g. 'send button', 'search field', 'File menu'")],
+        query: Annotated[str, Field(description="What to find, e.g. 'send button', 'search field', 'File menu'", max_length=200)],
         max_depth: Annotated[int, Field(description="Search depth (1-4)", ge=1, le=4)] = 3,
     ) -> dict:
         """Find a specific UI element in an app by semantic description.
@@ -305,9 +366,14 @@ def register_macos_ax_tools(mcp: FastMCP) -> None:
         if not _ax_available():
             return _not_trusted_error()
 
-        pid = _find_app_pid(app_name)
-        if not pid:
+        app_info = _find_app_info(app_name)
+        if not app_info:
             return {"status": "error", "message": f"App '{app_name}' not found."}
+
+        if _is_blocked_app(app_info["name"], app_info.get("bundle_id", "")):
+            return _blocked_app_error(app_info["name"])
+
+        pid = app_info["pid"]
 
         root = AXUIElementCreateApplication(pid)
         elements = _walk_tree(root, depth=0, max_depth=max_depth)
@@ -364,11 +430,14 @@ def register_macos_ax_tools(mcp: FastMCP) -> None:
         if not _ax_available():
             return _not_trusted_error()
 
-        pid = _find_app_pid(app_name)
-        if not pid:
+        app_info = _find_app_info(app_name)
+        if not app_info:
             return {"status": "error", "message": f"App '{app_name}' not found."}
 
-        root = AXUIElementCreateApplication(pid)
+        if _is_blocked_app(app_info["name"], app_info.get("bundle_id", "")):
+            return _blocked_app_error(app_info["name"])
+
+        root = AXUIElementCreateApplication(app_info["pid"])
         target = _get_element_by_path(root, element_path)
 
         if target is None:
@@ -398,7 +467,7 @@ def register_macos_ax_tools(mcp: FastMCP) -> None:
     def type_in_element(
         app_name: Annotated[str, Field(description="App name, e.g. 'Safari', 'TextEdit'")],
         element_path: Annotated[str, Field(description="Element _path from find_element(), e.g. 'root/0/1'")],
-        text: Annotated[str, Field(description="Text to type into the element")],
+        text: Annotated[str, Field(description="Text to type into the element", max_length=50000)],
         clear_first: Annotated[bool, Field(description="Clear existing content before typing")] = False,
     ) -> dict:
         """Type text into a text field or text area in a native macOS app.
@@ -421,9 +490,14 @@ def register_macos_ax_tools(mcp: FastMCP) -> None:
         if not _ax_available():
             return _not_trusted_error()
 
-        pid = _find_app_pid(app_name)
-        if not pid:
+        app_info = _find_app_info(app_name)
+        if not app_info:
             return {"status": "error", "message": f"App '{app_name}' not found."}
+
+        if _is_blocked_app(app_info["name"], app_info.get("bundle_id", "")):
+            return _blocked_app_error(app_info["name"])
+
+        pid = app_info["pid"]
 
         root = AXUIElementCreateApplication(pid)
         target = _get_element_by_path(root, element_path)

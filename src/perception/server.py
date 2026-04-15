@@ -34,7 +34,7 @@ mcp = FastMCP(
         "to control any native app directly via the Accessibility API — "
         "no browser required for Finder, TextEdit, Xcode, Slack, etc."
     ),
-    version="1.1.0",
+    version="1.2.0",
 )
 
 register_memory_tools(mcp)
@@ -44,8 +44,17 @@ register_macos_ax_tools(mcp)
 
 def main() -> None:
     import os
+    import sys
     if os.environ.get("PORT"):
-        mcp.run(transport="http", host="0.0.0.0", port=int(os.environ["PORT"]))
+        port = int(os.environ["PORT"])
+        if not os.environ.get("AXIOM_API_KEY"):
+            print(
+                "[axiom-perception] WARNING: HTTP transport started without AXIOM_API_KEY. "
+                "The server is accessible to anyone who can reach this port. "
+                "Set AXIOM_API_KEY and put a reverse proxy with auth in front for production use.",
+                file=sys.stderr,
+            )
+        mcp.run(transport="http", host="0.0.0.0", port=port)
     else:
         mcp.run(transport="stdio")
 

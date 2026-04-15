@@ -1,6 +1,7 @@
 """Core memory tools — save, recall, update, list, search patterns."""
 
 import json
+import re
 import uuid
 from datetime import datetime, timezone
 from typing import Annotated, Optional
@@ -9,6 +10,34 @@ from fastmcp import FastMCP
 from pydantic import Field
 
 from perception.db import get_conn, init_db
+
+# ---- Input validation constants ----
+
+_PATTERN_ID_RE = re.compile(r'^[a-f0-9]{8}$')
+_ALLOWED_CATEGORIES = {"social", "dev", "productivity", "research", "ecommerce", "general", "content"}
+_MAX_STEP_LEN = 500
+_MAX_STEPS = 50
+
+
+def _validate_pattern_id(pattern_id: str) -> Optional[str]:
+    """Return error message if pattern_id is invalid, else None."""
+    if not _PATTERN_ID_RE.match(pattern_id):
+        return f"Invalid pattern_id '{pattern_id}': must be 8 lowercase hex characters."
+    return None
+
+
+def _validate_steps(steps: list) -> Optional[str]:
+    """Return error message if steps list is invalid, else None."""
+    if not steps:
+        return "steps cannot be empty."
+    if len(steps) > _MAX_STEPS:
+        return f"steps cannot exceed {_MAX_STEPS} items (got {len(steps)})."
+    for i, step in enumerate(steps):
+        if not isinstance(step, str):
+            return f"step {i} must be a string."
+        if len(step) > _MAX_STEP_LEN:
+            return f"step {i} exceeds {_MAX_STEP_LEN} chars (got {len(step)})."
+    return None
 
 
 def _now() -> str:
@@ -19,8 +48,8 @@ def register_memory_tools(mcp: FastMCP) -> None:
 
     @mcp.tool
     def recall_pattern(
-        task: Annotated[str, Field(description="What you're trying to do, e.g. 'post tweet', 'create github PR', 'fill login form'")],
-        app: Annotated[Optional[str], Field(description="Optional: filter by app name, e.g. 'twitter', 'github', 'linkedin'")] = None,
+        task: Annotated[str, Field(description="What you're trying to do, e.g. 'post tweet', 'create github PR', 'fill login form'", max_length=200)],
+        app: Annotated[Optional[str], Field(description="Optional: filter by app name, e.g. 'twitter', 'github', 'linkedin'", max_length=50)] = None,
     ) -> dict:
         """Retrieve the best known workflow pattern for a task BEFORE attempting it.
 
@@ -113,11 +142,11 @@ def register_memory_tools(mcp: FastMCP) -> None:
 
     @mcp.tool
     def save_pattern(
-        task: Annotated[str, Field(description="Short task description, e.g. 'post tweet with image on x.com'")],
+        task: Annotated[str, Field(description="Short task description, e.g. 'post tweet with image on x.com'", max_length=200)],
         steps: Annotated[list[str], Field(description="Ordered list of action steps that successfully completed the task")],
-        app: Annotated[str, Field(description="Target application, e.g. 'twitter', 'github', 'linkedin', 'generic'")] = "generic",
+        app: Annotated[str, Field(description="Target application, e.g. 'twitter', 'github', 'linkedin', 'generic'", max_length=50)] = "generic",
         category: Annotated[str, Field(description="Workflow category: 'social', 'dev', 'productivity', 'research', 'ecommerce', 'general'")] = "general",
-        notes: Annotated[Optional[str], Field(description="Caveats, known issues, prerequisites, or tips for this pattern")] = None,
+        notes: Annotated[Optional[str], Field(description="Caveats, known issues, prerequisites, or tips for this pattern", max_length=1000)] = None,
     ) -> dict:
         """Save a workflow pattern that successfully completed a task.
 
@@ -136,6 +165,18 @@ def register_memory_tools(mcp: FastMCP) -> None:
         - "Click the blue 'Post' button to submit"
         """
         init_db()
+
+        err = _validate_steps(steps)
+        if err:
+            return {"status": "error", "message": err}
+
+        cat = category.strip().lower()
+        if cat not in _ALLOWED_CATEGORIES:
+            return {
+                "status": "error",
+                "message": f"category must be one of: {sorted(_ALLOWED_CATEGORIES)}",
+            }
+
         pattern_id = uuid.uuid4().hex[:8]
         now = _now()
 
@@ -145,7 +186,7 @@ def register_memory_tools(mcp: FastMCP) -> None:
                 """INSERT INTO patterns
                    (id, task, app, category, steps, notes, created_at, updated_at)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                (pattern_id, task, app.lower(), category.lower(),
+                (pattern_id, task.strip(), app.strip().lower(), cat,
                  json.dumps(steps), notes, now, now),
             )
             conn.commit()
@@ -166,10 +207,10 @@ def register_memory_tools(mcp: FastMCP) -> None:
 
     @mcp.tool
     def update_pattern(
-        pattern_id: Annotated[str, Field(description="Pattern ID from recall_pattern or list_patterns")],
+        pattern_id: Annotated[str, Field(description="Pattern ID from recall_pattern or list_patterns", max_length=8)],
         steps: Annotated[list[str], Field(description="New improved steps that replace the current ones")],
-        notes: Annotated[Optional[str], Field(description="Updated notes — appended to existing notes if provided")] = None,
-        reason: Annotated[Optional[str], Field(description="Why this version is better, e.g. '3 fewer clicks', 'avoids modal bug'")] = None,
+        notes: Annotated[Optional[str], Field(description="Updated notes — appended to existing notes if provided", max_length=1000)] = None,
+        reason: Annotated[Optional[str], Field(description="Why this version is better, e.g. '3 fewer clicks', 'avoids modal bug'", max_length=200)] = None,
     ) -> dict:
         """Replace a pattern's steps with a better or faster solution.
 
@@ -181,6 +222,15 @@ def register_memory_tools(mcp: FastMCP) -> None:
         faster path than user A, calling update_pattern promotes that approach for everyone.
         """
         init_db()
+
+        id_err = _validate_pattern_id(pattern_id)
+        if id_err:
+            return {"status": "error", "message": id_err}
+
+        steps_err = _validate_steps(steps)
+        if steps_err:
+            return {"status": "error", "message": steps_err}
+
         conn = get_conn()
         try:
             row = conn.execute("SELECT * FROM patterns WHERE id = ?", (pattern_id,)).fetchone()
@@ -217,10 +267,10 @@ def register_memory_tools(mcp: FastMCP) -> None:
 
     @mcp.tool
     def record_outcome(
-        pattern_id: Annotated[str, Field(description="ID of the pattern that was executed")],
+        pattern_id: Annotated[str, Field(description="ID of the pattern that was executed", max_length=8)],
         success: Annotated[bool, Field(description="True if the task completed successfully, False if it failed")],
         time_ms: Annotated[Optional[int], Field(description="Execution time in milliseconds (optional but valuable for ranking)", ge=0)] = None,
-        error: Annotated[Optional[str], Field(description="Brief error description if success=False")] = None,
+        error: Annotated[Optional[str], Field(description="Brief error description if success=False", max_length=500)] = None,
     ) -> dict:
         """Record the result of executing a pattern.
 
@@ -232,6 +282,11 @@ def register_memory_tools(mcp: FastMCP) -> None:
         Patterns with <50% success rate after 5+ executions are flagged for review.
         """
         init_db()
+
+        id_err = _validate_pattern_id(pattern_id)
+        if id_err:
+            return {"status": "error", "message": id_err}
+
         exec_id = uuid.uuid4().hex[:8]
         now = _now()
 
@@ -282,9 +337,9 @@ def register_memory_tools(mcp: FastMCP) -> None:
 
     @mcp.tool
     def list_patterns(
-        app: Annotated[Optional[str], Field(description="Filter by app name, e.g. 'twitter', 'github'")] = None,
-        category: Annotated[Optional[str], Field(description="Filter by category: 'social', 'dev', 'productivity'")] = None,
-        source: Annotated[Optional[str], Field(description="Filter by source: 'local' (your patterns) or 'community'")] = None,
+        app: Annotated[Optional[str], Field(description="Filter by app name, e.g. 'twitter', 'github'", max_length=50)] = None,
+        category: Annotated[Optional[str], Field(description="Filter by category: 'social', 'dev', 'productivity'", max_length=30)] = None,
+        source: Annotated[Optional[str], Field(description="Filter by source: 'local' (your patterns) or 'community'", max_length=20)] = None,
     ) -> dict:
         """Browse all known patterns, optionally filtered by app, category, or source.
 
@@ -337,7 +392,7 @@ def register_memory_tools(mcp: FastMCP) -> None:
 
     @mcp.tool
     def search_patterns(
-        query: Annotated[str, Field(description="Search keyword, e.g. 'tweet', 'pull request', 'login form', 'screenshot'")],
+        query: Annotated[str, Field(description="Search keyword, e.g. 'tweet', 'pull request', 'login form', 'screenshot'", max_length=200)],
     ) -> dict:
         """Search patterns by keyword across task name, app, category, and notes.
 
