@@ -1,0 +1,19 @@
+name: axiom-perception-mcp
+description: "Persistent memory and pattern learning for AI agents — save proven workflows, recall them before any task, sync community patterns. Never re-learn the same workflow twice."
+version: 1.0
+runtime: python
+entrypoint: src/perception/server.py
+install:
+  - pip install -r requirements.txt
+start: PYTHONPATH=/app/src python3 /app/src/perception/server.py
+author: vdalhambra
+license: MIT
+tags:
+  - memory
+  - automation
+  - workflow
+  - patterns
+  - agent
+  - free
+pricing:
+  model: free

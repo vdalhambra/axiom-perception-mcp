@@ -1,0 +1,16 @@
+{
+  "name": "Axiom Perception MCP",
+  "description": "Persistent memory and pattern learning for AI agents. Never re-learn the same workflow twice — save proven steps, recall them before any task, track success rates, and sync with community-contributed patterns for Twitter, GitHub, LinkedIn, and more. Works alongside Playwright MCP and any automation tool.",
+  "license": "MIT",
+  "tags": ["memory", "automation", "workflow", "patterns", "learning", "agent", "productivity", "free"],
+  "tools": [
+    { "name": "recall_pattern", "description": "Get the best known workflow for a task before attempting it" },
+    { "name": "save_pattern", "description": "Save a workflow that successfully completed a task" },
+    { "name": "update_pattern", "description": "Replace a pattern with a better or faster solution" },
+    { "name": "record_outcome", "description": "Track success/failure after executing a pattern" },
+    { "name": "list_patterns", "description": "Browse all known patterns filtered by app or category" },
+    { "name": "search_patterns", "description": "Search patterns by keyword" },
+    { "name": "export_pattern", "description": "Export a pattern as shareable JSON for community contribution" },
+    { "name": "fetch_community_patterns", "description": "Import community-contributed patterns from GitHub" }
+  ]
+}

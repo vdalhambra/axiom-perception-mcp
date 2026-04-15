@@ -1,0 +1,9 @@
+name: axiom-perception-mcp
+description: "Persistent memory and pattern learning for AI agents. Recall proven workflows before any multi-step task. Community patterns for Twitter, GitHub, LinkedIn, and more — no cold start, no trial-and-error."
+license: MIT
+tags: [memory, automation, workflow, patterns, learning, agent, free]
+startCommand:
+  type: stdio
+  configSchema: {}
+  commandFunction: |-
+    () => ({ command: "uvx", args: ["axiom-perception-mcp"] })

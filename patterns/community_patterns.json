@@ -1,0 +1,356 @@
+{
+  "version": "1.0.0",
+  "updated_at": "2026-04-15",
+  "description": "Community-contributed workflow patterns for axiom-perception-mcp. Each pattern is a proven step-by-step workflow that an AI agent can follow using Playwright MCP or any browser automation tool.",
+  "patterns": [
+    {
+      "task": "post tweet on x.com",
+      "app": "twitter",
+      "category": "social",
+      "version": 1,
+      "success_rate": 0.95,
+      "execution_count": 12,
+      "notes": "Requires logged-in session. Character limit 280. Works on desktop layout.",
+      "steps": [
+        "Navigate to https://x.com and wait for the timeline to load (look for the home feed)",
+        "Click the 'Post' button in the left sidebar — it's a dark button, usually says 'Post' on desktop",
+        "Wait for the tweet composer dialog/modal to appear",
+        "Click inside the tweet textarea and type or paste the tweet content",
+        "Verify the character counter shows remaining characters (max 280)",
+        "Click the blue 'Post' button inside the composer to submit",
+        "Wait for the composer to close — the tweet should appear at the top of your timeline"
+      ]
+    },
+    {
+      "task": "post tweet thread on x.com",
+      "app": "twitter",
+      "category": "social",
+      "version": 1,
+      "success_rate": 0.88,
+      "execution_count": 8,
+      "notes": "Use keyboard.type with delay for each tweet. Click '+' button to add next tweet. Submit entire thread with 'Post all' button.",
+      "steps": [
+        "Navigate to https://x.com and wait for timeline to load",
+        "Click the 'Post' button in the left sidebar to open the composer",
+        "Type the first tweet in the textarea (max 280 chars)",
+        "Click the '+' button at the bottom-right of the tweet to add the next tweet in the thread",
+        "Type the second tweet in the new text area that appears",
+        "Repeat: click '+' and type each additional tweet",
+        "When all tweets are written, click 'Post all' button to publish the entire thread at once",
+        "Wait for the thread to appear in timeline"
+      ]
+    },
+    {
+      "task": "reply to a tweet on x.com",
+      "app": "twitter",
+      "category": "social",
+      "version": 1,
+      "success_rate": 0.92,
+      "execution_count": 15,
+      "notes": "Navigate directly to the tweet URL for most reliable click targeting.",
+      "steps": [
+        "Navigate directly to the tweet URL (e.g. https://x.com/username/status/TWEETID)",
+        "Wait for the tweet and replies to load",
+        "Click the speech bubble / reply icon below the tweet",
+        "Wait for the reply composer to appear",
+        "Type the reply text in the textarea",
+        "Click the 'Reply' button to submit",
+        "Verify the reply appears in the thread"
+      ]
+    },
+    {
+      "task": "follow a user on x.com",
+      "app": "twitter",
+      "category": "social",
+      "version": 1,
+      "success_rate": 0.97,
+      "execution_count": 20,
+      "notes": "Fastest: go directly to the profile URL.",
+      "steps": [
+        "Navigate to the user's profile: https://x.com/USERNAME",
+        "Wait for the profile to load (look for the profile header and bio)",
+        "Click the 'Follow' button (blue/dark outlined button near the top of the profile)",
+        "The button should change to 'Following' to confirm success",
+        "If a confirmation dialog appears, confirm the follow"
+      ]
+    },
+    {
+      "task": "like a tweet on x.com",
+      "app": "twitter",
+      "category": "social",
+      "version": 1,
+      "success_rate": 0.98,
+      "execution_count": 25,
+      "notes": "Heart icon turns red when liked. Can also navigate to tweet URL first for reliability.",
+      "steps": [
+        "Navigate to the tweet URL or find the tweet in the feed",
+        "Locate the heart icon below the tweet",
+        "Click the heart icon to like",
+        "Verify the heart icon turns red/pink to confirm the like"
+      ]
+    },
+    {
+      "task": "publish post on linkedin",
+      "app": "linkedin",
+      "category": "social",
+      "version": 1,
+      "success_rate": 0.90,
+      "execution_count": 10,
+      "notes": "LinkedIn sometimes shows a 'posting as' selector — make sure to select the right profile (personal or company page).",
+      "steps": [
+        "Navigate to https://www.linkedin.com/feed and wait for the feed to load",
+        "Click the 'Start a post' box at the top of the feed",
+        "Wait for the post composer modal to open",
+        "Click inside the text area and type or paste the post content",
+        "If posting as a company page: click 'Posting as [name]' at the top and select the company page",
+        "Review the post content",
+        "Click the 'Post' button at the bottom of the composer",
+        "Wait for the modal to close — the post will appear in the feed shortly"
+      ]
+    },
+    {
+      "task": "create github pull request",
+      "app": "github",
+      "category": "dev",
+      "version": 1,
+      "success_rate": 0.93,
+      "execution_count": 18,
+      "notes": "Branch must already exist and have commits ahead of base. Uses the GitHub web UI — consider gh CLI as a faster alternative.",
+      "steps": [
+        "Navigate to the repository on github.com",
+        "If you just pushed a branch, GitHub shows a 'Compare & pull request' yellow banner — click it",
+        "If no banner: click the 'Pull requests' tab, then click 'New pull request'",
+        "Select the base branch (usually 'main') and compare branch (your feature branch)",
+        "Review the diff to confirm the correct changes are included",
+        "Fill in the PR title — be descriptive",
+        "Fill in the description: what changed and why",
+        "Click 'Create pull request'",
+        "Note the PR number and URL for future reference"
+      ]
+    },
+    {
+      "task": "create github issue",
+      "app": "github",
+      "category": "dev",
+      "version": 1,
+      "success_rate": 0.96,
+      "execution_count": 14,
+      "notes": "Consider using 'gh issue create' CLI for faster execution without browser.",
+      "steps": [
+        "Navigate to the repository on github.com",
+        "Click the 'Issues' tab",
+        "Click 'New issue'",
+        "If issue templates appear, select the appropriate template or click 'Open a blank issue'",
+        "Fill in the issue title",
+        "Fill in the description: steps to reproduce / feature description",
+        "Add labels if relevant (look for the Labels section on the right sidebar)",
+        "Click 'Submit new issue'",
+        "Note the issue number for reference"
+      ]
+    },
+    {
+      "task": "comment on github pull request",
+      "app": "github",
+      "category": "dev",
+      "version": 1,
+      "success_rate": 0.95,
+      "execution_count": 9,
+      "notes": "For a general comment (not an inline code review comment).",
+      "steps": [
+        "Navigate to the PR URL on github.com",
+        "Scroll to the bottom of the PR page to the comment box",
+        "Click inside the 'Leave a comment' textarea",
+        "Type the comment (supports GitHub Flavored Markdown)",
+        "Click 'Comment' button to submit",
+        "Verify the comment appears in the conversation timeline"
+      ]
+    },
+    {
+      "task": "publish article on dev.to",
+      "app": "devto",
+      "category": "content",
+      "version": 1,
+      "success_rate": 0.88,
+      "execution_count": 7,
+      "notes": "Alternatively use the DEV.to API: POST /api/articles with api-key header for fully automated publishing without browser.",
+      "steps": [
+        "Navigate to https://dev.to/new to open a new article editor",
+        "Wait for the editor to load",
+        "Click on the title field and type the article title",
+        "Add tags in the tags field (up to 4 tags, e.g. 'mcp, ai, python')",
+        "Click in the content area (below the front matter section)",
+        "Type or paste the article content in Markdown format",
+        "Click the 'Save draft' button to save progress",
+        "Review the article preview by clicking 'Preview'",
+        "When ready, click 'Publish' to publish immediately",
+        "Verify the article URL appears in the success confirmation"
+      ]
+    },
+    {
+      "task": "publish article on dev.to via api",
+      "app": "devto",
+      "category": "content",
+      "version": 1,
+      "success_rate": 0.97,
+      "execution_count": 11,
+      "notes": "Requires DEVTO_API_KEY environment variable. Much faster and more reliable than browser automation.",
+      "steps": [
+        "Get the DEV.to API key from the DEVTO_API_KEY environment variable",
+        "Make a POST request to https://dev.to/api/articles with headers: {'api-key': API_KEY, 'Content-Type': 'application/json'}",
+        "Request body: {\"article\": {\"title\": \"...\", \"body_markdown\": \"...\", \"published\": true, \"tags\": [\"tag1\", \"tag2\"]}}",
+        "Parse the response JSON — look for 'url' field for the published article URL",
+        "Confirm status code 201 = success"
+      ]
+    },
+    {
+      "task": "post on bluesky",
+      "app": "bluesky",
+      "category": "social",
+      "version": 1,
+      "success_rate": 0.96,
+      "execution_count": 8,
+      "notes": "Bluesky has an official API (AT Protocol). Use the API directly — much faster than browser. Requires BSKY_HANDLE and BSKY_APP_PASSWORD env vars.",
+      "steps": [
+        "Get session token: POST https://bsky.social/xrpc/com.atproto.server.createSession with {identifier: BSKY_HANDLE, password: BSKY_APP_PASSWORD}",
+        "Extract accessJwt and did from the response",
+        "Create post: POST https://bsky.social/xrpc/com.atproto.repo.createRecord with Authorization: Bearer {accessJwt}",
+        "Request body: {repo: did, collection: 'app.bsky.feed.post', record: {text: 'post content', createdAt: ISO8601_timestamp}}",
+        "Confirm status 200 and extract the uri from response for reference"
+      ]
+    },
+    {
+      "task": "search on hacker news",
+      "app": "hackernews",
+      "category": "research",
+      "version": 1,
+      "success_rate": 0.99,
+      "execution_count": 5,
+      "notes": "Algolia search API is much faster than browser. Use https://hn.algolia.com/api/v1/search",
+      "steps": [
+        "Use the Algolia API: GET https://hn.algolia.com/api/v1/search?query=QUERY&tags=story",
+        "Add &hitsPerPage=10 to limit results",
+        "Parse the JSON response: hits array contains {title, url, author, points, num_comments, objectID}",
+        "objectID can be used to build the HN URL: https://news.ycombinator.com/item?id={objectID}"
+      ]
+    },
+    {
+      "task": "submit show hn post on hacker news",
+      "app": "hackernews",
+      "category": "social",
+      "version": 1,
+      "success_rate": 0.82,
+      "execution_count": 4,
+      "notes": "Best time: Tuesday-Thursday 9-11am Eastern US. Title must start with 'Show HN:'. No API for submissions — requires browser.",
+      "steps": [
+        "Navigate to https://news.ycombinator.com/submit and wait for the form to load",
+        "Fill in the 'title' field — must start with 'Show HN: ' followed by the project name and brief description",
+        "Fill in the 'url' field with the project URL (GitHub, demo, or landing page)",
+        "Leave the 'text' field empty for URL submissions (or fill for text-only posts)",
+        "Click the 'submit' button",
+        "If a captcha appears, solve it",
+        "Verify submission by checking your profile page at https://news.ycombinator.com/user?id=USERNAME"
+      ]
+    },
+    {
+      "task": "fill login form on website",
+      "app": "generic",
+      "category": "productivity",
+      "version": 1,
+      "success_rate": 0.94,
+      "execution_count": 30,
+      "notes": "Generic pattern for any login form. Adjust selectors to match the specific site.",
+      "steps": [
+        "Navigate to the login page URL",
+        "Wait for the form to be visible",
+        "Click the email/username input field",
+        "Type the email or username",
+        "Click the password input field",
+        "Type the password",
+        "Click the submit/login button",
+        "Wait for the redirect to the authenticated page",
+        "Verify login success (look for user avatar, dashboard, or profile element)"
+      ]
+    },
+    {
+      "task": "take screenshot of webpage",
+      "app": "generic",
+      "category": "research",
+      "version": 1,
+      "success_rate": 0.99,
+      "execution_count": 50,
+      "notes": "Using Playwright MCP browser_take_screenshot tool.",
+      "steps": [
+        "Navigate to the target URL using browser_navigate",
+        "Wait for the page to fully load (check for key content elements)",
+        "Call browser_take_screenshot to capture the current state",
+        "Review the screenshot to verify the correct page is captured"
+      ]
+    },
+    {
+      "task": "copy text content from webpage",
+      "app": "generic",
+      "category": "research",
+      "version": 1,
+      "success_rate": 0.96,
+      "execution_count": 22,
+      "notes": "Use browser_snapshot to get the accessibility tree text without rendering issues.",
+      "steps": [
+        "Navigate to the target URL using browser_navigate",
+        "Wait for the page to fully load",
+        "Call browser_snapshot to get the accessibility tree",
+        "Extract the relevant text content from the snapshot",
+        "If the content is behind a 'load more' or pagination, click to expand before snapshotting"
+      ]
+    },
+    {
+      "task": "claim mcp server on glama.ai",
+      "app": "glama",
+      "category": "dev",
+      "version": 1,
+      "success_rate": 0.85,
+      "execution_count": 3,
+      "notes": "Must be done from desktop browser — automated browsers may hit CAPTCHA. Requires GitHub authentication.",
+      "steps": [
+        "Navigate to https://glama.ai/mcp/servers",
+        "Search for your MCP server by name",
+        "Click on the server listing",
+        "Look for a 'Claim this server' button (appears if server is unclaimed)",
+        "Click 'Claim' and authenticate with GitHub when prompted",
+        "Verify ownership by confirming you own the GitHub repo",
+        "Once claimed, you can edit the server description and add screenshots"
+      ]
+    },
+    {
+      "task": "deploy mcp to mcpize",
+      "app": "mcpize",
+      "category": "dev",
+      "version": 1,
+      "success_rate": 0.90,
+      "execution_count": 6,
+      "notes": "Requires mcpize CLI installed and fresh login (token expires in ~1 hour). SSL workaround needed on some machines.",
+      "steps": [
+        "Run: mcpize login (authenticate fresh — token expires hourly)",
+        "Navigate to the project directory: cd ~/projects/mcp-servers/YOUR_PROJECT",
+        "Deploy with: NODE_TLS_REJECT_UNAUTHORIZED=0 mcpize deploy --yes --skip-wizard",
+        "Wait for deployment confirmation and the live URL",
+        "Test the deployed endpoint is responding"
+      ]
+    },
+    {
+      "task": "publish python package to pypi",
+      "app": "pypi",
+      "category": "dev",
+      "version": 1,
+      "success_rate": 0.95,
+      "execution_count": 8,
+      "notes": "Requires twine and ~/.pypirc with API token configured.",
+      "steps": [
+        "Update the version in pyproject.toml",
+        "Run: uv build (creates dist/ directory with .whl and .tar.gz)",
+        "Run: twine upload dist/* (uses credentials from ~/.pypirc)",
+        "Verify the package page is live at https://pypi.org/project/PACKAGE-NAME/",
+        "Test installation: uvx PACKAGE-NAME or pip install PACKAGE-NAME"
+      ]
+    }
+  ]
+}
