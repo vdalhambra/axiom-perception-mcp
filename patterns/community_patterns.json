@@ -1,6 +1,6 @@
 {
-  "version": "1.0.0",
-  "updated_at": "2026-04-15",
+  "version": "1.1.0",
+  "updated_at": "2026-04-16",
   "description": "Community-contributed workflow patterns for axiom-perception-mcp. Each pattern is a proven step-by-step workflow that an AI agent can follow using Playwright MCP or any browser automation tool.",
   "patterns": [
     {
@@ -350,6 +350,46 @@
         "Run: twine upload dist/* (uses credentials from ~/.pypirc)",
         "Verify the package page is live at https://pypi.org/project/PACKAGE-NAME/",
         "Test installation: uvx PACKAGE-NAME or pip install PACKAGE-NAME"
+      ]
+    },
+    {
+      "task": "fill codemirror editor field with playwright",
+      "app": "glama",
+      "category": "dev",
+      "version": 1,
+      "success_rate": 0.90,
+      "execution_count": 6,
+      "notes": "page.fill(), execCommand, clipboard paste, and keyboard shortcuts ALL FAIL on CodeMirror v6 editors. The ONLY reliable approach is accessing the CM view directly via JavaScript. Discovered after 6 failed attempts.",
+      "steps": [
+        "Do NOT use page.fill() — it selects the element but CM v6 ignores programmatic input events",
+        "Do NOT use execCommand('insertText') — deprecated, no-op in CM v6",
+        "Do NOT use keyboard shortcuts (Cmd+A then type) — unreliable in headless/MCP contexts",
+        "Locate the CodeMirror editor container with: await page.$$('.cm-content')",
+        "For each editor i, dispatch the change directly: await page.evaluate(`editors[${i}].cmTile.view.dispatch({changes: {from: 0, to: editors[${i}].cmTile.view.state.doc.length, insert: '${value}'}})`)",
+        "Wait ~1.5s for React to sync from the CM view state to any hidden SELECT/input elements",
+        "Verify the value was set by reading the editor state back"
+      ]
+    },
+    {
+      "task": "configure and build mcp server on glama admin",
+      "app": "glama",
+      "category": "dev",
+      "version": 1,
+      "success_rate": 0.85,
+      "execution_count": 4,
+      "notes": "Glama admin uses CodeMirror editors for Dockerfile and config fields — standard fill methods don't work. See 'fill codemirror editor field with playwright' pattern. Build & Release button auto-creates a release — no separate step needed.",
+      "steps": [
+        "Navigate to https://glama.ai/mcp/servers/OWNER/SERVER-NAME/admin",
+        "Authenticate via GitHub OAuth if prompted",
+        "Click the Dockerfile tab in the admin configuration section",
+        "Use the cmTile.view.dispatch() technique to set Dockerfile content (page.fill fails on CM editors)",
+        "Set Docker config: Base image debian:bookworm-slim, Python 3.12, uv for package management",
+        "buildSteps: ['uv venv', 'uv pip install -e .'] — creates virtualenv first, then installs",
+        "CMD: ['/app/.venv/bin/YOUR-ENTRYPOINT'] — use the venv binary path",
+        "Wait 1.5s after setting each field for React state to sync",
+        "Click 'Build & Release' button — this builds the server AND creates a release automatically",
+        "Wait for build to complete (typically 20-60s) and verify tool count in the result",
+        "Score will show as 67% initially — tool scores are calculated asynchronously over a few hours"
       ]
     }
   ]

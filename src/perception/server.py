@@ -1,9 +1,16 @@
 """
-Axiom Perception MCP — Persistent Memory & Pattern Learning for AI Agents.
+Axiom Perception MCP — Empirical Memory & Workflow Intelligence for AI Agents.
 
-Gives Claude a long-term memory for multi-step workflows. Save patterns that work,
-recall them before starting a task, record outcomes to track reliability, and
-sync with community-contributed patterns so you never start from zero.
+Agents forget. This fixes it. Every workflow you complete gets stored as a pattern
+with a real success rate — not rules you wrote, but things the agent discovered.
+Next session: recall_pattern() returns the exact steps that worked, ranked by
+how reliable they've proven to be. First time: 40 min. After that: 2 min.
+
+Four capabilities:
+  1. Pattern memory     — save/recall/update proven workflows with success tracking
+  2. Failure learning   — record what approaches failed so future agents skip them
+  3. Workflow checkpoints — resume long tasks across sessions, no re-doing done steps
+  4. Multi-agent notes  — share state, results, and locks between concurrent agents
 
 Works as an intelligence layer on top of any automation tool
 (Playwright MCP, Computer Use, etc.).
@@ -18,28 +25,35 @@ from fastmcp import FastMCP
 from perception.tools.memory import register_memory_tools
 from perception.tools.community import register_community_tools
 from perception.tools.macos_ax import register_macos_ax_tools
+from perception.tools.checkpoints import register_checkpoint_tools
+from perception.tools.coordination import register_coordination_tools
 
 mcp = FastMCP(
     name="Axiom Perception",
     instructions=(
-        "Persistent memory and pattern learning for multi-step workflows. "
+        "Empirical memory and workflow intelligence for AI agents. "
         "ALWAYS call recall_pattern() BEFORE starting any multi-step task — "
-        "if a pattern exists, follow its steps to skip trial-and-error. "
-        "After completing a task (success or failure), call record_outcome() "
-        "to track reliability. When you find a better approach, call update_pattern() "
-        "to improve the shared knowledge. "
+        "pass context= with your current environment (tech, URL, framework) for "
+        "context-aware matching. If a pattern exists, follow its steps to skip trial-and-error. "
+        "After every execution (success OR failure), call record_outcome() — "
+        "pass approach= to build the failure knowledge base (what NOT to try next time). "
+        "For long workflows (5+ steps): call save_checkpoint() after each step so "
+        "resume_checkpoint() can pick up where you left off after any interruption. "
+        "For multi-agent coordination: use share_note() / read_note() to pass state "
+        "between concurrent agents or sequential sessions. "
         "On first use: call fetch_community_patterns() to load battle-tested "
         "workflows for Twitter, GitHub, LinkedIn, and more — no cold start. "
         "On macOS: use check_accessibility_permissions() then get_app_ui_tree() "
-        "to control any native app directly via the Accessibility API — "
-        "no browser required for Finder, TextEdit, Xcode, Slack, etc."
+        "to control any native app directly via the Accessibility API."
     ),
-    version="1.2.0",
+    version="2.0.0",
 )
 
 register_memory_tools(mcp)
 register_community_tools(mcp)
 register_macos_ax_tools(mcp)
+register_checkpoint_tools(mcp)
+register_coordination_tools(mcp)
 
 
 def main() -> None:

@@ -50,12 +50,16 @@ def register_memory_tools(mcp: FastMCP) -> None:
     def recall_pattern(
         task: Annotated[str, Field(description="What you're trying to do, e.g. 'post tweet', 'create github PR', 'fill login form'", max_length=200)],
         app: Annotated[Optional[str], Field(description="Optional: filter by app name, e.g. 'twitter', 'github', 'linkedin'", max_length=50)] = None,
+        context: Annotated[Optional[str], Field(description="Optional: current environment description for context-aware matching, e.g. 'codemirror glama admin playwright', 'react vite typescript'", max_length=300)] = None,
     ) -> dict:
         """Retrieve the best known workflow pattern for a task BEFORE attempting it.
 
         Call this first before starting any multi-step task. If a pattern exists,
         follow its steps exactly to skip all trial-and-error. Patterns are ranked
         by success rate — the top result is the community-proven approach.
+
+        Pass context= with keywords about your current environment (tech stack, app,
+        URL, framework) to boost patterns that were proven to work in the same context.
 
         Returns the step-by-step workflow if found, or status='not_found' with a
         suggestion to complete manually and then save_pattern() for next time.
@@ -67,6 +71,10 @@ def register_memory_tools(mcp: FastMCP) -> None:
         words = [w for w in task.lower().split() if len(w) >= 3 and w not in _stop]
         if not words:
             words = [task.lower()]
+
+        context_words = []
+        if context:
+            context_words = [w.lower() for w in context.split() if len(w) >= 3]
 
         # Fetch candidates: any word must appear in the task field
         word_conditions = []
@@ -97,19 +105,35 @@ def register_memory_tools(mcp: FastMCP) -> None:
                 ),
             }
 
-        # Score by how many query words appear in the task name
+        # Score by task word matches + context_hints bonus
         def relevance(row: dict) -> float:
             task_lower = row["task"].lower()
             hits = sum(1 for w in words if w in task_lower)
-            return hits / len(words)
+            task_score = hits / len(words)
+
+            # Context bonus: extra 0.1 per matching context hint (capped at 0.3)
+            context_bonus = 0.0
+            if context_words:
+                hints_raw = row["context_hints"] if "context_hints" in row.keys() else "[]"
+                try:
+                    hints = [h.lower() for h in json.loads(hints_raw or "[]")]
+                except Exception:
+                    hints = []
+                context_hits = sum(1 for cw in context_words if any(cw in h for h in hints))
+                context_bonus = min(context_hits * 0.1, 0.3)
+
+            return task_score + context_bonus
 
         ranked = sorted(rows, key=lambda r: (relevance(r), r["success_rate"], r["execution_count"]), reverse=True)
 
         # Short queries (1-2 words): all words must appear (no generic false positives)
         # Longer queries (3+): at least half the words must match
         MIN_RELEVANCE = 1.0 if len(words) <= 2 else 0.5
-        top_relevance = relevance(ranked[0])
-        if top_relevance < MIN_RELEVANCE:
+        top_rel = relevance(ranked[0])
+        # Strip context bonus for the minimum check (context only boosts, doesn't qualify)
+        task_lower = ranked[0]["task"].lower()
+        task_hits = sum(1 for w in words if w in task_lower) / len(words)
+        if task_hits < MIN_RELEVANCE:
             return {
                 "status": "not_found",
                 "message": f"No sufficiently relevant pattern found for '{task}'",
@@ -121,6 +145,12 @@ def register_memory_tools(mcp: FastMCP) -> None:
             }
 
         best = ranked[0]
+        hints_raw = best["context_hints"] if "context_hints" in best.keys() else "[]"
+        try:
+            context_hints_list = json.loads(hints_raw or "[]")
+        except Exception:
+            context_hints_list = []
+
         result = {
             "status": "found",
             "pattern_id": best["id"],
@@ -134,6 +164,7 @@ def register_memory_tools(mcp: FastMCP) -> None:
             "source": best["source"],
             "version": best["version"],
             "notes": best["notes"],
+            "context_hints": context_hints_list or None,
         }
         if len(ranked) > 1:
             result["alternatives_available"] = len(ranked) - 1
@@ -145,8 +176,9 @@ def register_memory_tools(mcp: FastMCP) -> None:
         task: Annotated[str, Field(description="Short task description, e.g. 'post tweet with image on x.com'", max_length=200)],
         steps: Annotated[list[str], Field(description="Ordered list of action steps that successfully completed the task")],
         app: Annotated[str, Field(description="Target application, e.g. 'twitter', 'github', 'linkedin', 'generic'", max_length=50)] = "generic",
-        category: Annotated[str, Field(description="Workflow category: 'social', 'dev', 'productivity', 'research', 'ecommerce', 'general'")] = "general",
+        category: Annotated[str, Field(description="Workflow category: 'social', 'dev', 'productivity', 'research', 'ecommerce', 'general', 'content'")] = "general",
         notes: Annotated[Optional[str], Field(description="Caveats, known issues, prerequisites, or tips for this pattern", max_length=1000)] = None,
+        context_hints: Annotated[Optional[list[str]], Field(description="Keywords describing WHEN this pattern applies: tech stack, framework, specific UI, e.g. ['codemirror', 'glama', 'playwright'] or ['react', 'vite', 'typescript']. Max 10 hints, 30 chars each.")] = None,
     ) -> dict:
         """Save a workflow pattern that successfully completed a task.
 
@@ -154,15 +186,15 @@ def register_memory_tools(mcp: FastMCP) -> None:
         the exact steps. Future executions skip trial-and-error by following
         this pattern directly.
 
+        context_hints lets you tag the specific environment where this pattern works,
+        so recall_pattern() with context= boosts this pattern when the context matches.
+        Example: a Playwright pattern for CodeMirror editors should have
+        context_hints=['codemirror', 'playwright', 'dispatch'] so it surfaces when
+        another agent is working in a CodeMirror environment.
+
         Write steps as plain language instructions Claude can follow with any
         automation tool (Playwright MCP, Computer Use, etc.). Be specific about
         what to click, where to navigate, what to wait for.
-
-        Example steps for posting a tweet:
-        - "Navigate to https://x.com and wait for timeline to load"
-        - "Click the 'Post' button in the left sidebar to open composer"
-        - "Type tweet text in the composer textarea"
-        - "Click the blue 'Post' button to submit"
         """
         init_db()
 
@@ -177,6 +209,18 @@ def register_memory_tools(mcp: FastMCP) -> None:
                 "message": f"category must be one of: {sorted(_ALLOWED_CATEGORIES)}",
             }
 
+        # Validate context_hints
+        hints: list[str] = []
+        if context_hints:
+            if len(context_hints) > 10:
+                return {"status": "error", "message": "context_hints cannot exceed 10 items."}
+            for h in context_hints:
+                if not isinstance(h, str):
+                    return {"status": "error", "message": "Each context hint must be a string."}
+                if len(h) > 30:
+                    return {"status": "error", "message": f"Context hint '{h[:30]}' exceeds 30 chars."}
+                hints.append(h.strip().lower())
+
         pattern_id = uuid.uuid4().hex[:8]
         now = _now()
 
@@ -184,10 +228,10 @@ def register_memory_tools(mcp: FastMCP) -> None:
         try:
             conn.execute(
                 """INSERT INTO patterns
-                   (id, task, app, category, steps, notes, created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                   (id, task, app, category, steps, notes, context_hints, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (pattern_id, task.strip(), app.strip().lower(), cat,
-                 json.dumps(steps), notes, now, now),
+                 json.dumps(steps), notes, json.dumps(hints), now, now),
             )
             conn.commit()
         finally:
@@ -199,9 +243,11 @@ def register_memory_tools(mcp: FastMCP) -> None:
             "task": task,
             "app": app,
             "steps_count": len(steps),
+            "context_hints": hints or None,
             "tip": (
                 f"Call record_outcome('{pattern_id}', success=True) after each use "
-                "to build the success rate metric."
+                "to build the success rate metric. "
+                "Pass approach= to record what technique you used — builds a failure knowledge base."
             ),
         }
 
@@ -211,6 +257,7 @@ def register_memory_tools(mcp: FastMCP) -> None:
         steps: Annotated[list[str], Field(description="New improved steps that replace the current ones")],
         notes: Annotated[Optional[str], Field(description="Updated notes — appended to existing notes if provided", max_length=1000)] = None,
         reason: Annotated[Optional[str], Field(description="Why this version is better, e.g. '3 fewer clicks', 'avoids modal bug'", max_length=200)] = None,
+        context_hints: Annotated[Optional[list[str]], Field(description="Update or replace context hints, e.g. ['codemirror', 'glama']. Pass empty list to clear hints.")] = None,
     ) -> dict:
         """Replace a pattern's steps with a better or faster solution.
 
@@ -231,6 +278,20 @@ def register_memory_tools(mcp: FastMCP) -> None:
         if steps_err:
             return {"status": "error", "message": steps_err}
 
+        # Validate context_hints if provided
+        new_hints = None
+        if context_hints is not None:
+            if len(context_hints) > 10:
+                return {"status": "error", "message": "context_hints cannot exceed 10 items."}
+            cleaned_hints = []
+            for h in context_hints:
+                if not isinstance(h, str):
+                    return {"status": "error", "message": "Each context hint must be a string."}
+                if len(h) > 30:
+                    return {"status": "error", "message": f"Context hint '{h[:30]}' exceeds 30 chars."}
+                cleaned_hints.append(h.strip().lower())
+            new_hints = json.dumps(cleaned_hints)
+
         conn = get_conn()
         try:
             row = conn.execute("SELECT * FROM patterns WHERE id = ?", (pattern_id,)).fetchone()
@@ -244,13 +305,17 @@ def register_memory_tools(mcp: FastMCP) -> None:
             else:
                 new_notes = notes if notes is not None else existing_notes
 
+            hints_to_save = new_hints if new_hints is not None else (
+                row["context_hints"] if "context_hints" in row.keys() else "[]"
+            )
+
             conn.execute(
                 """UPDATE patterns
-                   SET steps = ?, notes = ?, version = version + 1,
+                   SET steps = ?, notes = ?, context_hints = ?, version = version + 1,
                        success_rate = 1.0, execution_count = 0,
                        updated_at = ?
                    WHERE id = ?""",
-                (json.dumps(steps), new_notes, _now(), pattern_id),
+                (json.dumps(steps), new_notes, hints_to_save, _now(), pattern_id),
             )
             conn.commit()
         finally:
@@ -263,6 +328,7 @@ def register_memory_tools(mcp: FastMCP) -> None:
             "new_version": row["version"] + 1,
             "old_steps_count": len(json.loads(row["steps"])),
             "new_steps_count": len(steps),
+            "context_hints_updated": context_hints is not None,
         }
 
     @mcp.tool
@@ -271,12 +337,17 @@ def register_memory_tools(mcp: FastMCP) -> None:
         success: Annotated[bool, Field(description="True if the task completed successfully, False if it failed")],
         time_ms: Annotated[Optional[int], Field(description="Execution time in milliseconds (optional but valuable for ranking)", ge=0)] = None,
         error: Annotated[Optional[str], Field(description="Brief error description if success=False", max_length=500)] = None,
+        approach: Annotated[Optional[str], Field(description="What technique/method you used, e.g. 'page.fill()', 'cmTile.view.dispatch()', 'keyboard shortcut Cmd+A'. Builds a failure knowledge base so future agents know what NOT to try.", max_length=200)] = None,
     ) -> dict:
-        """Record the result of executing a pattern.
+        """Record the result of executing a pattern — success or failure.
 
-        Call this after every pattern execution — success or failure.
-        Tracks success_rate and average execution time, which determine
-        which patterns get promoted when multiple options exist for the same task.
+        Call this after every pattern execution. Tracks success_rate and average
+        execution time, which determine which patterns get promoted.
+
+        The approach= parameter is where the empirical learning happens:
+        recording WHAT you tried and whether it worked builds a failure knowledge
+        base. When a pattern fails with approach='page.fill()' 3 times, future
+        agents know to try something else — without wasting 40 minutes re-discovering it.
 
         Patterns with >80% success rate are flagged as reliable.
         Patterns with <50% success rate after 5+ executions are flagged for review.
@@ -297,8 +368,8 @@ def register_memory_tools(mcp: FastMCP) -> None:
                 return {"status": "error", "message": f"Pattern '{pattern_id}' not found."}
 
             conn.execute(
-                "INSERT INTO executions (id, pattern_id, success, time_ms, error, timestamp) VALUES (?,?,?,?,?,?)",
-                (exec_id, pattern_id, int(success), time_ms, error, now),
+                "INSERT INTO executions (id, pattern_id, success, time_ms, error, approach, timestamp) VALUES (?,?,?,?,?,?,?)",
+                (exec_id, pattern_id, int(success), time_ms, error, approach, now),
             )
 
             stats = conn.execute(
@@ -314,6 +385,14 @@ def register_memory_tools(mcp: FastMCP) -> None:
                 (new_rate, new_avg, stats["n"], now, pattern_id),
             )
             conn.commit()
+
+            # Fetch failed approaches to surface in the response
+            failed_approaches = conn.execute(
+                """SELECT approach FROM executions
+                   WHERE pattern_id=? AND success=0 AND approach IS NOT NULL
+                   GROUP BY approach ORDER BY COUNT(*) DESC LIMIT 5""",
+                (pattern_id,),
+            ).fetchall()
         finally:
             conn.close()
 
@@ -324,16 +403,21 @@ def register_memory_tools(mcp: FastMCP) -> None:
             elif new_rate >= 0.9:
                 status_note = "Pattern is highly reliable (>90% success rate)."
 
-        return {
+        result = {
             "status": "recorded",
             "pattern_id": pattern_id,
             "execution_id": exec_id,
             "success": success,
+            "approach": approach,
             "new_success_rate": f"{round(new_rate * 100, 1)}%",
             "total_executions": stats["n"],
             "avg_time_ms": new_avg,
             "note": status_note or None,
         }
+        if failed_approaches and not success:
+            result["known_failed_approaches"] = [r["approach"] for r in failed_approaches]
+            result["tip"] = "These approaches have failed before — try a different method."
+        return result
 
     @mcp.tool
     def list_patterns(
@@ -368,8 +452,14 @@ def register_memory_tools(mcp: FastMCP) -> None:
         finally:
             conn.close()
 
-        patterns = [
-            {
+        patterns = []
+        for r in rows:
+            hints_raw = r["context_hints"] if "context_hints" in r.keys() else "[]"
+            try:
+                hints = json.loads(hints_raw or "[]")
+            except Exception:
+                hints = []
+            patterns.append({
                 "id": r["id"],
                 "task": r["task"],
                 "app": r["app"],
@@ -379,9 +469,8 @@ def register_memory_tools(mcp: FastMCP) -> None:
                 "steps": len(json.loads(r["steps"])),
                 "source": r["source"],
                 "version": f"v{r['version']}",
-            }
-            for r in rows
-        ]
+                "context_hints": hints or None,
+            })
 
         apps = sorted({p["app"] for p in patterns})
         return {
