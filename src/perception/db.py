@@ -73,11 +73,22 @@ def init_db() -> None:
                 updated_at TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS agent_progress (
+                id         TEXT PRIMARY KEY,
+                agent_id   TEXT NOT NULL,
+                task       TEXT NOT NULL,
+                step       TEXT NOT NULL,
+                result     TEXT,
+                created_at TEXT NOT NULL
+            );
+
             CREATE INDEX IF NOT EXISTS idx_patterns_app ON patterns(app);
             CREATE INDEX IF NOT EXISTS idx_patterns_task ON patterns(task);
             CREATE INDEX IF NOT EXISTS idx_executions_pattern ON executions(pattern_id);
             CREATE INDEX IF NOT EXISTS idx_checkpoints_workflow ON checkpoints(workflow);
             CREATE INDEX IF NOT EXISTS idx_checkpoints_status ON checkpoints(status);
+            CREATE INDEX IF NOT EXISTS idx_agent_progress_task ON agent_progress(task);
+            CREATE INDEX IF NOT EXISTS idx_agent_progress_agent ON agent_progress(agent_id);
         """)
         conn.commit()
         _run_migrations(conn)

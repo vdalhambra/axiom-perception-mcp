@@ -1,5 +1,7 @@
-"""Multi-agent coordination — shared notes for multiple Claude instances."""
+"""Multi-agent coordination — shared notes and progress tracking for multiple Claude instances."""
 
+import json
+import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Annotated, Optional
 
@@ -232,3 +234,199 @@ def register_coordination_tools(mcp: FastMCP) -> None:
             conn.close()
 
         return {"status": "deleted", "key": key}
+
+    # ── Agent Progress Broadcasting ──────────────────────────────────────────
+
+    @mcp.tool
+    def report_step(
+        agent_id: Annotated[str, Field(
+            description="Identifier for this agent, e.g. 'twitter-poster', 'linkedin-agent', 'reddit-submitter'",
+            max_length=100,
+        )],
+        task: Annotated[str, Field(
+            description="The overall task this agent is working on, e.g. 'post v2.0.0 announcement', 'submit to 5 directories'",
+            max_length=200,
+        )],
+        step: Annotated[str, Field(
+            description="What was just completed — be specific and irreversible: 'tweet 4/7 published', 'submitted to r/ClaudeAI, post URL: ...', 'step 3/5 done: Glama accepted'",
+            max_length=300,
+        )],
+        result: Annotated[Optional[dict], Field(
+            description="Any data worth preserving for recovery: URLs, IDs, confirmation codes, counts",
+        )] = None,
+    ) -> dict:
+        """Record a completed step from a running agent — for crash recovery and orchestrator visibility.
+
+        Call this ONLY after actions that are confirmed, completed, and irreversible.
+        Not every micro-step — only the ones that matter for recovery:
+        - A post that went live (URL to prove it)
+        - A form successfully submitted (confirmation ID)
+        - A file uploaded, an email sent, a PR created
+
+        This is how the orchestrator knows what was done if a session crashes.
+        Next session: get_agent_progress() returns the full log — skip what's done,
+        resume from where the agent stopped.
+
+        Token cost: ~100 tokens per call. Only log points of no return.
+        """
+        init_db()
+        now = datetime.now(timezone.utc).isoformat()
+        step_id = uuid.uuid4().hex[:8]
+
+        conn = get_conn()
+        try:
+            conn.execute(
+                """INSERT INTO agent_progress (id, agent_id, task, step, result, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (step_id, agent_id.strip(), task.strip(), step.strip(),
+                 json.dumps(result) if result else None, now),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        return {
+            "status": "logged",
+            "step_id": step_id,
+            "agent_id": agent_id,
+            "task": task,
+            "step": step,
+            "result_saved": result is not None,
+        }
+
+    @mcp.tool
+    def get_agent_progress(
+        task: Annotated[Optional[str], Field(
+            description="Filter by task name (partial match), e.g. 'post announcement', 'submit directories'",
+            max_length=200,
+        )] = None,
+        agent_id: Annotated[Optional[str], Field(
+            description="Filter by specific agent ID, e.g. 'twitter-poster'",
+            max_length=100,
+        )] = None,
+        last_minutes: Annotated[Optional[int], Field(
+            description="Only show steps from the last N minutes. Omit to see full history.",
+            ge=1,
+            le=10080,
+        )] = None,
+    ) -> dict:
+        """Retrieve the progress log of running or recently completed agents.
+
+        Call this after a crash, at the start of a recovery session, or any time
+        you need to know what an agent has already done before deciding what to do next.
+
+        Returns a chronological log of completed steps with any saved result data.
+        Use this to:
+        - Know which platform posts went live before a crash
+        - Skip already-completed steps when relaunching an agent
+        - Audit what happened across a multi-agent run
+
+        Example — after Playwright crashes mid-distribution:
+        get_agent_progress(task='post v2.0.0 announcement')
+        → "twitter: tweets 1-4 published. linkedin: not started. reddit: post submitted."
+        → Relaunch only linkedin and reddit from step 1, continue twitter from tweet 5.
+        """
+        init_db()
+
+        sql = "SELECT * FROM agent_progress WHERE 1=1"
+        params: list = []
+
+        if task:
+            sql += " AND LOWER(task) LIKE ?"
+            params.append(f"%{task.lower().strip()}%")
+        if agent_id:
+            sql += " AND LOWER(agent_id) LIKE ?"
+            params.append(f"%{agent_id.lower().strip()}%")
+        if last_minutes:
+            cutoff = (
+                datetime.now(timezone.utc) - timedelta(minutes=last_minutes)
+            ).isoformat()
+            sql += " AND created_at >= ?"
+            params.append(cutoff)
+
+        sql += " ORDER BY created_at ASC LIMIT 200"
+
+        conn = get_conn()
+        try:
+            rows = conn.execute(sql, params).fetchall()
+        finally:
+            conn.close()
+
+        steps = []
+        for r in rows:
+            result_data = None
+            if r["result"]:
+                try:
+                    result_data = json.loads(r["result"])
+                except Exception:
+                    result_data = r["result"]
+            elapsed = _elapsed_minutes(r["created_at"])
+            steps.append({
+                "step_id": r["id"],
+                "agent_id": r["agent_id"],
+                "task": r["task"],
+                "step": r["step"],
+                "result": result_data,
+                "logged_ago_minutes": elapsed,
+                "logged_at": r["created_at"],
+            })
+
+        # Group by agent for a cleaner summary
+        agents_seen: dict = {}
+        for s in steps:
+            aid = s["agent_id"]
+            if aid not in agents_seen:
+                agents_seen[aid] = {"steps_completed": 0, "last_step": None}
+            agents_seen[aid]["steps_completed"] += 1
+            agents_seen[aid]["last_step"] = s["step"]
+
+        return {
+            "total_steps": len(steps),
+            "agents": agents_seen,
+            "log": steps,
+            "tip": (
+                "Use this log to skip completed steps when relaunching agents after a crash."
+                if steps else
+                "No progress logged yet for these filters."
+            ),
+        }
+
+    @mcp.tool
+    def clear_agent_progress(
+        task: Annotated[str, Field(
+            description="Task name to clear (exact or partial match), e.g. 'post v2.0.0 announcement'",
+            max_length=200,
+        )],
+        agent_id: Annotated[Optional[str], Field(
+            description="Only clear for a specific agent. Omit to clear all agents for this task.",
+            max_length=100,
+        )] = None,
+    ) -> dict:
+        """Clear the progress log for a completed or abandoned task.
+
+        Use after a task is fully done and the log is no longer needed for recovery.
+        Keeps the database clean — old progress logs have no value once the task
+        is confirmed complete across all agents.
+        """
+        init_db()
+        sql = "DELETE FROM agent_progress WHERE LOWER(task) LIKE ?"
+        params: list = [f"%{task.lower().strip()}%"]
+
+        if agent_id:
+            sql += " AND LOWER(agent_id) LIKE ?"
+            params.append(f"%{agent_id.lower().strip()}%")
+
+        conn = get_conn()
+        try:
+            cursor = conn.execute(sql, params)
+            deleted = cursor.rowcount
+            conn.commit()
+        finally:
+            conn.close()
+
+        return {
+            "status": "cleared",
+            "task": task,
+            "agent_id": agent_id,
+            "steps_deleted": deleted,
+        }

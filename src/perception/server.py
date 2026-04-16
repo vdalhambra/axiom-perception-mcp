@@ -46,7 +46,7 @@ mcp = FastMCP(
         "On macOS: use check_accessibility_permissions() then get_app_ui_tree() "
         "to control any native app directly via the Accessibility API."
     ),
-    version="2.0.0",
+    version="2.1.0",
 )
 
 register_memory_tools(mcp)
