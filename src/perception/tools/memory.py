@@ -14,7 +14,7 @@ from perception.db import get_conn, init_db
 # ---- Input validation constants ----
 
 _PATTERN_ID_RE = re.compile(r'^[a-f0-9]{8}$')
-_ALLOWED_CATEGORIES = {"social", "dev", "productivity", "research", "ecommerce", "general", "content"}
+_ALLOWED_CATEGORIES = {"social", "dev", "productivity", "research", "ecommerce", "general", "content", "automation", "web", "testing", "data", "api", "cli", "desktop"}
 _MAX_STEP_LEN = 500
 _MAX_STEPS = 50
 

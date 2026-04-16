@@ -94,33 +94,58 @@ def _get_running_apps() -> list[dict]:
     from AppKit import NSWorkspace
     apps = NSWorkspace.sharedWorkspace().runningApplications()
     result = []
+    seen_bundle_ids: set[str] = set()
     for app in apps:
         name = app.localizedName()
         if not name:
             continue
+        bundle_id = app.bundleIdentifier() or ""
+        # Deduplicate: skip additional processes with the same bundle ID
+        if bundle_id and bundle_id in seen_bundle_ids:
+            continue
+        if bundle_id:
+            seen_bundle_ids.add(bundle_id)
         result.append({
             "name": name,
             "pid": app.processIdentifier(),
-            "bundle_id": app.bundleIdentifier() or "",
+            "bundle_id": bundle_id,
             "foreground": app.activationPolicy() == 0,
         })
     return sorted(result, key=lambda x: x["name"].lower())
 
 
 def _find_app_pid(app_name: str) -> Optional[int]:
-    name_lower = app_name.lower()
-    for app in _get_running_apps():
-        if name_lower in app["name"].lower():
-            return app["pid"]
-    return None
+    info = _find_app_info(app_name)
+    return info["pid"] if info else None
 
 
 def _find_app_info(app_name: str) -> Optional[dict]:
-    """Return {pid, name, bundle_id} for the first matching running app, or None."""
+    """Return {pid, name, bundle_id} for the best matching running app, or None.
+
+    Prefers: exact foreground match > exact match > foreground substring > any substring.
+    Skips helper/service processes that contain the app name as a substring.
+    """
     name_lower = app_name.lower()
-    for app in _get_running_apps():
-        if name_lower in app["name"].lower():
-            return app
+    apps = _get_running_apps()
+
+    # 1. Exact name match, foreground preferred
+    exact = [a for a in apps if a["name"].lower() == name_lower]
+    if exact:
+        fg = [a for a in exact if a["foreground"]]
+        return (fg or exact)[0]
+
+    # 2. Foreground apps where the app name starts with or equals the search term
+    starts = [a for a in apps if a["foreground"] and a["name"].lower().startswith(name_lower)]
+    if starts:
+        return starts[0]
+
+    # 3. Substring match — prefer foreground and shorter names (avoids "Service (App)" patterns)
+    matches = [a for a in apps if name_lower in a["name"].lower()]
+    if matches:
+        fg = [a for a in matches if a["foreground"]]
+        candidates = fg or matches
+        return min(candidates, key=lambda a: len(a["name"]))
+
     return None
 
 
